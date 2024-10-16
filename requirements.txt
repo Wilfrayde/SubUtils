@@ -9,6 +9,7 @@ moviepy==1.0.3
 numpy==2.1.2
 pillow==11.0.0
 proglog==0.1.10
+pydub==0.25.1
 pygame==2.6.1
 PyQt5==5.15.11
 PyQt5-Qt5==5.15.15

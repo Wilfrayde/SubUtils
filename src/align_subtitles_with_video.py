@@ -1,6 +1,9 @@
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
-import pysrt
+import pysubs2
 import speech_recognition as sr
+from pydub import AudioSegment
+from pydub.silence import split_on_silence
+import os
 
 def extraire_audio(chemin_video, chemin_audio):
     clip = VideoFileClip(chemin_video)
@@ -13,44 +16,45 @@ def transcrire_audio(chemin_audio):
     texte = recognizer.recognize_google(audio, language='fr-FR')
     return texte
 
-def generer_srt(texte_transcrit, chemin_srt, duree_video):
-    sous_titres = pysrt.SubRipFile()
+def segmenter_audio(chemin_audio):
+    audio = AudioSegment.from_wav(chemin_audio)
+    segments = split_on_silence(audio, min_silence_len=300, silence_thresh=audio.dBFS-16)
+    return segments
+
+def generer_srt(texte_transcrit, chemin_srt, segments):
+    subs = pysubs2.SSAFile()
     mots = texte_transcrit.split()
-    nb_mots = len(mots)
-    duree_par_mot = duree_video / nb_mots
+    index_mot = 0
+    total_mots = len(mots)
 
-    for i, mot in enumerate(mots):
-        debut = pysrt.SubRipTime(seconds=i * duree_par_mot)
-        fin = pysrt.SubRipTime(seconds=(i + 1) * duree_par_mot)
-        sous_titre = pysrt.SubRipItem(index=i+1, start=debut, end=fin, text=mot)
-        sous_titres.append(sous_titre)
+    for i, segment in enumerate(segments):
+        debut = sum(len(s) for s in segments[:i]) / 1000.0
+        fin = debut + len(segment) / 1000.0
+        nb_mots_segment = int((len(segment) / sum(len(s) for s in segments)) * total_mots)
+        texte_segment = ' '.join(mots[index_mot:index_mot + nb_mots_segment])
+        index_mot += nb_mots_segment
+        subs.append(pysubs2.SSAEvent(start=pysubs2.make_time(s=debut), end=pysubs2.make_time(s=fin), text=texte_segment))
 
-    sous_titres.save(chemin_srt, encoding='utf-8')
+    subs.save(chemin_srt, encoding='utf-8')
 
-def ajouter_sous_titres(chemin_video, chemin_srt, chemin_sortie):
+def ajouter_sous_titres(chemin_video, chemin_sous_titres, chemin_sortie, fontsize=24, color='white', bg_color=None, position='bottom', font='Arial'):
     clip = VideoFileClip(chemin_video)
-    sous_titres = pysrt.open(chemin_srt)
+    subs = pysubs2.load(chemin_sous_titres)
     clips_sous_titres = []
 
-    for sous_titre in sous_titres:
-        debut = sous_titre.start.ordinal / 1000
-        fin = sous_titre.end.ordinal / 1000
-        texte = sous_titre.text.replace('\n', ' ')
-        texte_clip = TextClip(texte, fontsize=24, color='white', bg_color='black')
-        texte_clip = texte_clip.set_position(('center', 'bottom')).set_duration(fin - debut).set_start(debut)
+    for sub in subs:
+        debut = sub.start / 1000.0
+        fin = sub.end / 1000.0
+        texte = sub.text.replace('\n', ' ')
+        
+        # Créer le TextClip sans bg_color si bg_color est None
+        if bg_color:
+            texte_clip = TextClip(texte, fontsize=fontsize, color=color, bg_color=bg_color, font=font)
+        else:
+            texte_clip = TextClip(texte, fontsize=fontsize, color=color, font=font)
+        
+        texte_clip = texte_clip.set_position(('center', position)).set_duration(fin - debut).set_start(debut)
         clips_sous_titres.append(texte_clip)
 
     video_finale = CompositeVideoClip([clip] + clips_sous_titres)
     video_finale.write_videofile(chemin_sortie, codec='libx264')
-
-if __name__ == "__main__":
-    chemin_video = "/home/dev/Bureau/video.mp4"
-    chemin_audio = "audio_extrait.wav"
-    chemin_srt = "sous_titres.srt"
-    chemin_sortie = "video_avec_sous_titres.mp4"
-
-    extraire_audio(chemin_video, chemin_audio)
-    texte_transcrit = transcrire_audio(chemin_audio)
-    clip = VideoFileClip(chemin_video)
-    generer_srt(texte_transcrit, chemin_srt, clip.duration)
-    ajouter_sous_titres(chemin_video, chemin_srt, chemin_sortie)
