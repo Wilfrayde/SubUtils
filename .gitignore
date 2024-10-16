@@ -1,0 +1,10 @@
+# Environnements virtuels
+env/
+venv/
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Autres
+.DS_Store
